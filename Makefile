@@ -1,10 +1,27 @@
 help:
+	@echo "make setup"
+	@echo "       installs ubuntu-image"
 	@echo "make red"
 	@echo "       build tinyos.red.img for tinybox red"
 	@echo "make green"
 	@echo "       build tinyos.green.img for tinybox green"
+	@echo "make pro"
+	@echo "       build tinyos.pro.img for tinybox pro"
+	@echo "make blue"
+	@echo "       build tinyos.blue.img for tinybox blue"
+	@echo "make red-dev"
+	@echo "       build tinyos.red.img development image for tinybox red"
+	@echo "make green-dev"
+	@echo "       build tinyos.green.img development image for tinybox green"
+	@echo "make pro-dev"
+	@echo "       build tinyos.pro.img development image for tinybox pro"
+	@echo "make blue-dev"
+	@echo "       build tinyos.blue.img development image for tinybox blue"
 	@echo "make clean"
 	@echo "       clean up"
+
+setup:
+	sudo snap install ubuntu-image --classic --edge
 
 clean:
 	rm -f tinyos.yaml build/tinybox-release
@@ -13,23 +30,42 @@ clean:
 	(mount | grep result/chroot) && echo "ERROR: something is still mounted" && exit 1 || true
 	sudo rm -rf result
 
-red:
+red: setup
 	sed 's/<|ARTIFACT_NAME|>/tinyos.red.img/g' tinyos.template.yaml > tinyos.yaml
 	echo "TINYBOX_COLOR=red" | tee --append build/tinybox-release
 	time make image
 
-green:
+green: setup
 	sed 's/<|ARTIFACT_NAME|>/tinyos.green.img/g' tinyos.template.yaml > tinyos.yaml
 	echo "TINYBOX_COLOR=green" | tee --append build/tinybox-release
 	time make image
 
-red-dev:
+pro: setup
+	sed 's/<|ARTIFACT_NAME|>/tinyos.pro.img/g' tinyos.template.yaml > tinyos.yaml
+	echo "TINYBOX_COLOR=green" | tee --append build/tinybox-release
+	echo "TINYBOX_PRO=1" | tee --append build/tinybox-release
+	time make image
+
+blue: setup
+	sed 's/<|ARTIFACT_NAME|>/tinyos.blue.img/g' tinyos.template.yaml > tinyos.yaml
+	echo "TINYBOX_COLOR=blue" | tee --append build/tinybox-release
+	time make image
+
+red-dev: setup
 	echo "TINYBOX_DEV=1" | tee --append build/tinybox-release
 	make red
 
-green-dev:
+green-dev: setup
 	echo "TINYBOX_DEV=1" | tee --append build/tinybox-release
 	make green
+
+pro-dev: setup
+	echo "TINYBOX_DEV=1" | tee --append build/tinybox-release
+	make pro
+
+blue-dev: setup
+	echo "TINYBOX_DEV=1" | tee --append build/tinybox-release
+	make blue
 
 image:
 	sed -i 's/<|CURRENT_DIR|>/$(shell pwd | sed 's/\//\\\//g')/g' tinyos.yaml
@@ -51,4 +87,4 @@ image:
 	# final cleanup
 	rm -f tinyos.yaml build/tinybox-release
 
-.PHONY: clean red green image
+.PHONY: setup clean red green pro blue red-dev green-dev pro-dev blue-dev image
