@@ -2,9 +2,9 @@ name: tinyos
 display-name: tinyos
 revision: 1
 architecture: amd64
-series: jammy
+series: noble
 class: preinstalled
-kernel: linux-generic-hwe-22.04
+kernel: linux-generic-hwe-24.04
 gadget:
   url: file://./pc-gadget/
   type: directory
@@ -17,7 +17,7 @@ rootfs:
   seed:
     urls:
       - file://<|CURRENT_DIR|>/ubuntu-seeds/
-    branch: jammy
+    branch: noble
     vcs: false
     names:
       - server
