@@ -13,7 +13,7 @@ done
 
 # replace /opt/tinybox with the git repo
 rm -rf /opt/tinybox
-git clone https://github.com/ppetroskevicius/tinybox /opt/tinybox
+git clone https://github.com/ppetroskevicius/tinyos /opt/tinybox
 
 source /etc/tinybox-release
 if [[ -n "$TINYBOX_DEV" ]]; then
