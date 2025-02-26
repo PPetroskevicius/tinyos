@@ -7,7 +7,7 @@ pushd /home/tiny
 
 # install pytorch
 if [[ "$TINYBOX_COLOR" == "red" ]]; then
-  pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.1
+  pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
 elif [[ "$TINYBOX_COLOR" == "green" ]]; then
   pip install torch torchvision torchaudio
 elif [[ "$TINYBOX_COLOR" == "blue" ]]; then

@@ -33,6 +33,7 @@ clean:
 red: setup
 	sed 's/<|ARTIFACT_NAME|>/tinyos.red.img/g' tinyos.template.yaml > tinyos.yaml
 	echo "TINYBOX_COLOR=red" | tee --append build/tinybox-release
+	echo "TINYBOX_DEV=0" | tee --append build/tinybox-release
 	time make image
 
 green: setup

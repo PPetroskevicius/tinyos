@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -xeo pipefail
+set -xeuo pipefail
 
 # enable networking in chroot
 mkdir -p /run/systemd/resolve
@@ -18,7 +18,7 @@ git clone https://github.com/ppetroskevicius/tinyos /opt/tinybox
 source /etc/tinybox-release
 if [[ -n "$TINYBOX_DEV" ]]; then
   pushd /opt/tinybox
-  git checkout dev
+  git checkout comments
   popd
 fi
 
