@@ -1,17 +1,45 @@
 import sys
+
 sys.path.insert(0, "/opt/tinybox/tinyturing/")
 sys.path.insert(0, "/opt/tinybox/service/displayservice/")
 
-from socketserver import UnixStreamServer, StreamRequestHandler
-import threading, time, signal, os, logging, math, subprocess
+import logging
+import math
+import os
+import signal
+import subprocess
+import threading
+import time
+from socketserver import StreamRequestHandler, UnixStreamServer
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] <%(filename)s:%(lineno)d::%(funcName)s> - %(message)s")
 from enum import Enum
 from queue import Queue
 
-from tinyturing.display import Display, WIDTH, HEIGHT
-from tinyturing.components import Anchor, Component, ComponentParent
-from tinyturing.components import Text, Image, MultiCollidingDVDImage, AnimatedText, Rectangle, LineGraph, VerticalProgressBar, HorizontalProgressBar
-from stats import get_gpu_utilizations, get_gpu_memory_utilizations, get_cpu_utilizations, get_gpu_power_draw, get_cpu_power_draw, get_disk_io_per_second
+from stats import (
+  get_cpu_power_draw,
+  get_cpu_utilizations,
+  get_disk_io_per_second,
+  get_gpu_memory_utilizations,
+  get_gpu_power_draw,
+  get_gpu_utilizations,
+)
+
+from tinyturing.components import (
+  Anchor,
+  AnimatedText,
+  Component,
+  ComponentParent,
+  HorizontalProgressBar,
+  Image,
+  LineGraph,
+  MultiCollidingDVDImage,
+  Rectangle,
+  Text,
+  VerticalProgressBar,
+)
+from tinyturing.display import HEIGHT, WIDTH, Display
+
 
 class StatusScreen(Component):
   def __init__(self):
@@ -104,16 +132,16 @@ class WelcomeScreen(Component):
     self.desc1 = Text("Scan for Docs", "sans", anchor=Anchor.TOP_LEFT, parent=ComponentParent(self.qr, Anchor.TOP_RIGHT))
 
     # read bmc password from /root/.bmc_password
-    if os.path.exists("/root/.bmc_password"):
-      try:
-        with open("/root/.bmc_password", "r") as f:
-          bmc_password = f.read().strip().split("=")[1].strip()
-        self.bmc_password = Text(bmc_password, "mono", anchor=Anchor.BOTTOM_LEFT, parent=ComponentParent(self.qr, Anchor.BOTTOM_RIGHT))
-        # try setting the bmc password
-        try: subprocess.run(["ipmitool", "user", "set", "password", "2", bmc_password])
-        except: logging.warning("Failed to set BMC password")
-      except: logging.warning("Failed to read BMC password")
-    else: logging.warning("BMC password file not found")
+    # if os.path.exists("/root/.bmc_password"):
+    #   try:
+    #     with open("/root/.bmc_password", "r") as f:
+    #       bmc_password = f.read().strip().split("=")[1].strip()
+    #     self.bmc_password = Text(bmc_password, "mono", anchor=Anchor.BOTTOM_LEFT, parent=ComponentParent(self.qr, Anchor.BOTTOM_RIGHT))
+    #     # try setting the bmc password
+    #     try: subprocess.run(["ipmitool", "user", "set", "password", "2", bmc_password])
+    #     except: logging.warning("Failed to set BMC password")
+    #   except: logging.warning("Failed to read BMC password")
+    # else: logging.warning("BMC password file not found")
 
     bmc_lan_info = subprocess.run(["ipmitool", "lan", "print"], capture_output=True).stdout.decode().split("\n")
     bmc_ip = next((line.split()[3] for line in bmc_lan_info if "IP Address  " in line), "N/A")

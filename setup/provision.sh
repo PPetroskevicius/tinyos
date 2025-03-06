@@ -22,62 +22,98 @@ fi
 echo "text,$(hostname -i | xargs):19531,,Found NIC" | nc -U /run/tinybox-screen.sock
 
 # determine NIC
+# set +e
+# interfaces=$(ip ad | grep -oP 'ens\w+np\d' | sort | uniq)
+# ip=""
+# iface=""
+# for interface in $interfaces; do
+#   sudo ip ad add 10.0.0.2/24 dev "$interface"
+#   sudo ip link set "$interface" up
+#   if ping -c 1 10.0.0.1; then
+#     echo "text,$(hostname -i | xargs):19531,,Using $interface,10.0.0.2" | nc -U /run/tinybox-screen.sock
+#     ip="10.0.0."
+#     iface="$interface"
+#     break
+#   else
+#     sudo ip ad del 10.0.0.2/24 dev "$interface"
+#   fi
+#   sudo ip ad add 10.0.1.2/24 dev "$interface"
+#   sudo ip link set "$interface" up
+#   if ping -c 1 10.0.1.1; then
+#     echo "text,$(hostname -i | xargs):19531,,Using $interface,10.0.1.2" | nc -U /run/tinybox-screen.sock
+#     ip="10.0.1."
+#     iface="$interface"
+#     break
+#   else
+#     sudo ip ad del 10.0.1.2/24 dev "$interface"
+#   fi
+# done
+# if [ -z "$ip" ]; then
+#   interfaces=$(ip ad | grep -oP 'enp\d\ds\dnp\d' | sort | uniq)
+#   for interface in $interfaces; do
+#     sudo ip ad add 10.0.0.2/24 dev "$interface"
+#     sudo ip link set "$interface" up
+#     if ping -c 1 10.0.0.1; then
+#       echo "text,$(hostname -i | xargs):19531,,Using $interface,10.0.0.2" | nc -U /run/tinybox-screen.sock
+#       ip="10.0.0."
+#       iface="$interface"
+#       break
+#     else
+#       sudo ip ad del 10.0.0.2/24 dev "$interface"
+#     fi
+#     sudo ip ad add 10.0.1.2/24 dev "$interface"
+#     sudo ip link set "$interface" up
+#     if ping -c 1 10.0.1.1; then
+#       echo "text,$(hostname -i | xargs):19531,,Using $interface,10.0.1.2" | nc -U /run/tinybox-screen.sock
+#       ip="10.0.1."
+#       iface="$interface"
+#       break
+#     else
+#       sudo ip ad del 10.0.1.2/24 dev "$interface"
+#     fi
+#   done
+#   if [ -z "$ip" ]; then
+#     echo "text,$(hostname -i | xargs):19531,,Failed to setup NIC" | nc -U /run/tinybox-screen.sock
+#     exit 1
+#   fi
+# fi
+# sudo ip link set "$iface" mtu 9000
+# set -e
+
+# determine NICs
 set +e
-interfaces=$(ip ad | grep -oP 'ens\w+np\d' | sort | uniq)
-ip=""
-iface=""
+# Look for all Ethernet interfaces (adjust regex if needed for your naming)
+interfaces=$(ip link | grep -oP 'en[osx]\w+' | sort | uniq | grep -v lo)
+if [ -z "$interfaces" ]; then
+  echo "text,$(hostname -i | xargs):19531,,No network interfaces found" | nc -U /run/tinybox-screen.sock
+  exit 1
+fi
+
+# Configure each interface with DHCP
 for interface in $interfaces; do
-  sudo ip ad add 10.0.0.2/24 dev "$interface"
+  echo "Attempting DHCP on $interface..."
+  # Bring the interface up
   sudo ip link set "$interface" up
-  if ping -c 1 10.0.0.1; then
-    echo "text,$(hostname -i | xargs):19531,,Using $interface,10.0.0.2" | nc -U /run/tinybox-screen.sock
-    ip="10.0.0."
-    iface="$interface"
-    break
+  # Request DHCP lease (using dhclient, adjust for your distro if needed)
+  sudo dhclient -v "$interface"
+  # Check if an IP was assigned in 192.168.20.0/24
+  assigned_ip=$(ip -4 addr show "$interface" | grep -oP '192\.168\.20\.\d+/24' | cut -d'/' -f1)
+  if [ -n "$assigned_ip" ]; then
+    echo "text,$(hostname -i | xargs):19531,,Using $interface,$assigned_ip" | nc -U /run/tinybox-screen.sock
+    # Set MTU to 9000 (optional, remove if not needed)
+    sudo ip link set "$interface" mtu 9000
   else
-    sudo ip ad del 10.0.0.2/24 dev "$interface"
-  fi
-  sudo ip ad add 10.0.1.2/24 dev "$interface"
-  sudo ip link set "$interface" up
-  if ping -c 1 10.0.1.1; then
-    echo "text,$(hostname -i | xargs):19531,,Using $interface,10.0.1.2" | nc -U /run/tinybox-screen.sock
-    ip="10.0.1."
-    iface="$interface"
-    break
-  else
-    sudo ip ad del 10.0.1.2/24 dev "$interface"
+    echo "text,$(hostname -i | xargs):19531,,Failed DHCP on $interface" | nc -U /run/tinybox-screen.sock
+    sudo ip link set "$interface" down
   fi
 done
-if [ -z "$ip" ]; then
-  interfaces=$(ip ad | grep -oP 'enp\d\ds\dnp\d' | sort | uniq)
-  for interface in $interfaces; do
-    sudo ip ad add 10.0.0.2/24 dev "$interface"
-    sudo ip link set "$interface" up
-    if ping -c 1 10.0.0.1; then
-      echo "text,$(hostname -i | xargs):19531,,Using $interface,10.0.0.2" | nc -U /run/tinybox-screen.sock
-      ip="10.0.0."
-      iface="$interface"
-      break
-    else
-      sudo ip ad del 10.0.0.2/24 dev "$interface"
-    fi
-    sudo ip ad add 10.0.1.2/24 dev "$interface"
-    sudo ip link set "$interface" up
-    if ping -c 1 10.0.1.1; then
-      echo "text,$(hostname -i | xargs):19531,,Using $interface,10.0.1.2" | nc -U /run/tinybox-screen.sock
-      ip="10.0.1."
-      iface="$interface"
-      break
-    else
-      sudo ip ad del 10.0.1.2/24 dev "$interface"
-    fi
-  done
-  if [ -z "$ip" ]; then
-    echo "text,$(hostname -i | xargs):19531,,Failed to setup NIC" | nc -U /run/tinybox-screen.sock
-    exit 1
-  fi
+
+# Verify at least one interface got an IP
+if ! ip -4 addr show | grep -q '192\.168\.20\.'; then
+  echo "text,$(hostname -i | xargs):19531,,Failed to setup any NIC with DHCP" | nc -U /run/tinybox-screen.sock
+  exit 1
 fi
-sudo ip link set "$iface" mtu 9000
+
 set -e
 
 # populate raid

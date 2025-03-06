@@ -13,12 +13,12 @@ done
 
 # replace /opt/tinybox with the git repo
 rm -rf /opt/tinybox
-git clone https://github.com/tinygrad/tinyos /opt/tinybox
+git clone https://github.com/ppetroskevicius/tinyos /opt/tinybox
 
 source /etc/tinybox-release
 if [[ -n "$TINYBOX_DEV" ]]; then
   pushd /opt/tinybox
-  git checkout dev
+  git checkout custom
   popd
 fi
 
