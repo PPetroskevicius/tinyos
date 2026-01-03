@@ -2,9 +2,9 @@ name: tinyos
 display-name: tinyos
 revision: 1
 architecture: amd64
-series: jammy
+series: <|UBUNTU_SERIES|>
 class: preinstalled
-kernel: linux-generic-hwe-22.04
+kernel: linux-generic-hwe-<|UBUNTU_VERSION|>
 gadget:
   url: file://./pc-gadget/
   type: directory
@@ -17,7 +17,7 @@ rootfs:
   seed:
     urls:
       - file://<|CURRENT_DIR|>/ubuntu-seeds/
-    branch: jammy
+    branch: <|UBUNTU_SERIES|>
     vcs: false
     names:
       - server
@@ -47,36 +47,10 @@ customization:
       #cloud-config
       preserve_hostname: true
       bootcmd:
-        - [ cloud-init-per, once, enabledisplayservice, systemctl, enable, displayservice.service ]
-        - [ cloud-init-per, always, startdisplayservice, systemctl, start, displayservice.service ]
-        - [ cloud-init-per, once, enablebuttonservice, systemctl, enable, buttonservice.service ]
-        - [ cloud-init-per, always, startbuttonservice, systemctl, start, buttonservice.service ]
-      mounts:
-        - [ /dev/md/0, /raid, auto, "defaults,noatime,nofail", "0", "2" ]
+        - [ cloud-init-per, once, earlyboot, bash, /opt/tinybox/setup/earlyboot.sh ]
       users: []
       runcmd:
-        - [ cloud-init-per, once, enablesecondboot, systemctl, enable, secondboot.service ]
-        - [ cloud-init-per, once, enabledisplayservice, systemctl, enable, displayservice.service ]
-        - [ cloud-init-per, always, startdisplayservice, systemctl, start, displayservice.service ]
-        - [ cloud-init-per, once, firstboot, bash, /opt/tinybox/setup/firstboot.sh ]
-        - [ cloud-init-per, once, enablebuttonservice, systemctl, enable, buttonservice.service ]
-        - [ cloud-init-per, always, startbuttonservice, systemctl, start, buttonservice.service ]
-        - [ cloud-init-per, once, enableautoupdate, systemctl, enable, autoupdate-tinybox.service ]
-        - [ cloud-init-per, once, enabletinychat, systemctl, enable, tinychat.service ]
-        - [ cloud-init-per, once, enablepoweroff, systemctl, enable, poweroff.service ]
-        - [ cloud-init-per, once, enablereboot, systemctl, enable, reboot.service ]
-        - [ cloud-init-per, once, hostname, hostnamectl, hostname, tinybox ]
-        - [ cloud-init-per, once, ntp, timedatectl, set-ntp, "true" ]
-        - [ cloud-init-per, once, updateinitramfs, update-initramfs, -u ]
-        - [ cloud-init-per, once, setbmcpass, bash, /opt/tinybox/setup/setbmcpass.sh, "1" ]
-        - [ cloud-init-per, once, raidsetup, bash, /opt/tinybox/setup/raidsetup.sh ]
-        - [ cloud-init-per, once, fixdisk, bash, /opt/tinybox/setup/fixdisk.sh ]
-        - [ cloud-init-per, once, reboot, bash, /opt/tinybox/service/reboot.sh ]
-      power_state:
-        delay: now
-        mode: reboot
-        message: Rebooting after setup
-        condition: true
+        - [ cloud-init-per, once, setup, systemctl, start, tinybox-setup ]
     meta-data: |
       dsmode: local
   extra-packages:
@@ -89,7 +63,9 @@ customization:
     - name: btop
     - name: build-essential
     - name: clang
+    - name: cmake
     - name: csvtool
+    - name: direnv
     - name: fd-find
     - name: file
     - name: git
@@ -97,7 +73,8 @@ customization:
     - name: ipmitool
     - name: jc
     - name: jq
-    - name: linux-tools-generic-hwe-22.04
+    - name: kitty-terminfo
+    - name: linux-tools-generic-hwe-<|UBUNTU_VERSION|>
     - name: lm-sensors
     - name: locales
     - name: lshw
@@ -122,7 +99,7 @@ customization:
   extra-snaps:
     # required
     - name: snapd
-    - name: core20
+    - name: core22
     # preinstalled
     - name: nvtop
 artifacts:

@@ -10,7 +10,9 @@ cd tinygrad
 python3 -m pip install -e .
 ```
 
-After you have installed tinygrad, try the [MNIST tutorial](mnist.md)
+After you have installed tinygrad, try the [MNIST tutorial](mnist.md).
+
+If you are new to tensor libraries, learn how to use them by solving puzzles from [tinygrad-tensor-puzzles](https://github.com/obadakhalili/tinygrad-tensor-puzzles).
 
 We also have [developer docs](developer/developer.md), and Di Zhu has created a [bunch of tutorials](https://mesozoic-egg.github.io/tinygrad-notes/) to help understand how tinygrad works.
 
@@ -26,6 +28,10 @@ To understand what training looks like in tinygrad, you should read `beautiful_m
 
 We have a [quickstart guide](quickstart.md) and a [showcase](showcase.md)
 
+## tinygrad Stack
+
+<img src="./tinygrad_vs_others.png" alt="Tinygrad vs others" style="max-width: 1000px; height: auto;" />
+
 ## Differences from PyTorch
 
 If you are migrating from PyTorch, welcome. Most of the API is the same. We hope you will find tinygrad both familiar and somehow more "correct feeling"
@@ -36,7 +42,7 @@ There's nothing special about a "Module" class in tinygrad, it's just a normal c
 
 ### tinygrad is functional
 
-In tinygrad, you can do [`x.conv2d(w, b)`](tensor/ops.md/#tinygrad.Tensor.conv2d) or [`x.sparse_categorical_cross_entropy(y)`](tensor/ops.md/#tinygrad.Tensor.sparse_categorical_crossentropy). We do also have a [`Conv2D`](nn.md/#tinygrad.nn.Conv2d) class like PyTorch if you want a place to keep the state, but all stateless operations don't have classes.
+In tinygrad, you can do [`x.conv2d(w, b)`](tensor/ops.md/#tinygrad.Tensor.conv2d) or [`x.sparse_categorical_crossentropy(y)`](tensor/ops.md/#tinygrad.Tensor.sparse_categorical_crossentropy). We do also have a [`Conv2D`](nn.md/#tinygrad.nn.Conv2d) class like PyTorch if you want a place to keep the state, but all stateless operations don't have classes.
 
 ### tinygrad is lazy
 

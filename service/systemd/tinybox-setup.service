@@ -1,0 +1,13 @@
+[Unit]
+Description=tinybox setup
+After=network.target autoupdate-tinybox.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=bash /opt/tinybox/setup/setup.sh
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

@@ -1,35 +1,79 @@
 help:
+	@echo "make setup"
+	@echo "       installs ubuntu-image"
 	@echo "make red"
 	@echo "       build tinyos.red.img for tinybox red"
 	@echo "make green"
 	@echo "       build tinyos.green.img for tinybox green"
+	@echo "make core"
+	@echo "       build tinyos.core.img for tinybox core"
+	@echo "make all"
+	@echo "       build all images"
+	@echo "make red-dev"
+	@echo "       build tinyos.red.img development image for tinybox red"
+	@echo "make green-dev"
+	@echo "       build tinyos.green.img development image for tinybox green"
+	@echo "make core-dev"
+	@echo "       build tinyos.core.img development image for tinybox core"
 	@echo "make clean"
 	@echo "       clean up"
 
+setup:
+	sudo snap install ubuntu-image --classic --edge
+
 clean:
 	rm -f tinyos.yaml build/tinybox-release
-	sudo umount result/chroot/proc result/chroot/sys result/chroot/dev/pts result/chroot/dev || true
+	sudo umount -f result/chroot/sys/firmware/efi/efivars || true
+	sudo umount -f result/chroot/proc result/chroot/sys result/chroot/dev/pts result/chroot/dev || true
 	# ensure that nothing is still mounted when we do this
 	(mount | grep result/chroot) && echo "ERROR: something is still mounted" && exit 1 || true
 	sudo rm -rf result
 
-red:
+red: setup
 	sed 's/<|ARTIFACT_NAME|>/tinyos.red.img/g' tinyos.template.yaml > tinyos.yaml
+	sed -i 's/<|UBUNTU_SERIES|>/noble/g' tinyos.yaml
+	sed -i 's/<|UBUNTU_VERSION|>/24.04/g' tinyos.yaml
 	echo "TINYBOX_COLOR=red" | tee --append build/tinybox-release
 	time make image
 
-green:
+green: setup
 	sed 's/<|ARTIFACT_NAME|>/tinyos.green.img/g' tinyos.template.yaml > tinyos.yaml
+	sed -i 's/<|UBUNTU_SERIES|>/noble/g' tinyos.yaml
+	sed -i 's/<|UBUNTU_VERSION|>/24.04/g' tinyos.yaml
 	echo "TINYBOX_COLOR=green" | tee --append build/tinybox-release
 	time make image
 
-red-dev:
+core: setup
+	sed 's/<|ARTIFACT_NAME|>/tinyos.core.img/g' tinyos.template.yaml > tinyos.yaml
+	sed -i 's/<|UBUNTU_SERIES|>/noble/g' tinyos.yaml
+	sed -i 's/<|UBUNTU_VERSION|>/24.04/g' tinyos.yaml
+	echo "TINYBOX_COLOR=core" | tee --append build/tinybox-release
+	echo "TINYBOX_CORE=1" | tee --append build/tinybox-release
+	time make image
+
+all:
+	mkdir -p outputs
+	make red
+	cp result/tinyos.red.img outputs/tinyos.red.img
+	make clean
+	make green
+	cp result/tinyos.green.img outputs/tinyos.green.img
+	make clean
+	make core
+	cp result/tinyos.core.img outputs/tinyos.core.img
+	make clean
+
+red-dev: setup
 	echo "TINYBOX_DEV=1" | tee --append build/tinybox-release
 	make red
 
-green-dev:
+green-dev: setup
 	echo "TINYBOX_DEV=1" | tee --append build/tinybox-release
 	make green
+
+core-dev: setup
+	echo "TINYBOX_DEV=1" | tee --append build/tinybox-release
+	make core
 
 image:
 	sed -i 's/<|CURRENT_DIR|>/$(shell pwd | sed 's/\//\\\//g')/g' tinyos.yaml
@@ -45,10 +89,11 @@ image:
 	# now we can do manual customization
 	sudo ubuntu-image classic --debug -w result -r -t perform_manual_customization tinyos.yaml
 	# cleanup so that ubuntu-image can unchroot cleanly
-	sudo umount result/chroot/proc result/chroot/sys result/chroot/dev/pts result/chroot/dev
+	sudo umount -f result/chroot/sys/firmware/efi/efivars
+	sudo umount -f result/chroot/proc result/chroot/sys result/chroot/dev/pts result/chroot/dev
 	# now we can let ubuntu-image finish the image build
 	sudo ubuntu-image classic --debug -w result -r tinyos.yaml
 	# final cleanup
 	rm -f tinyos.yaml build/tinybox-release
 
-.PHONY: clean red green image
+.PHONY: setup clean red green core all red-dev green-dev core-dev image

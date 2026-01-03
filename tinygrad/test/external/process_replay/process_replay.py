@@ -1,151 +1,109 @@
 #!/usr/bin/env python3
 # compare kernels created by HEAD against master
-import difflib, pickle, multiprocessing, os, logging, sqlite3, requests
-from tabulate import tabulate
-from datetime import datetime
-from typing import Dict, List, cast
-from test.external.process_replay.utils import print_diff
+import os, multiprocessing, logging, pickle, sqlite3, difflib, warnings, itertools
+from typing import Callable, Any
+from tinygrad.helpers import VERSION, Context, ContextVar, colored, db_connection, getenv, tqdm, to_function_name
+from tinygrad.engine.grouper import get_kernelize_map
 from tinygrad.codegen.kernel import Kernel
-from tinygrad.helpers import Context, ContextVar, colored, db_connection, VERSION, getenv, tqdm
+from tinygrad.uop.ops import UOp, Ops
 
 # *** process replay settings
-PAGE_SIZE = 100
+
+# internal
+PAGE_SIZE = getenv("PAGE_SIZE", 100)
 REF = os.getenv("GITHUB_REF_NAME", "")
 MAX_DIFF_PCT = getenv("PROCESS_REPLAY_MAX_DIFF_PCT", 20)
-RUN_ID = os.getenv("GITHUB_RUN_ID", "HEAD")
-TABLE_NAME = f"process_replay_{RUN_ID}_{getenv('GITHUB_RUN_ATTEMPT')}_{VERSION}"
-ASSERT_DIFF = getenv("ASSERT_PROCESS_REPLAY", int((k:="[run_process_replay]") in os.getenv("COMMIT_MESSAGE", k) or k in os.getenv("PR_TITLE", k)))
-COMPARE_SCHEDULE = getenv("COMPARE_SCHEDULE", int((k:="[compare_schedule]") in os.getenv("COMMIT_MESSAGE", "") or k in os.getenv("PR_TITLE", "")))
+TABLE_NAME = f"process_replay_{VERSION}"
+os.environ["CAPTURE_PROCESS_REPLAY"] = "0"
+early_stop = multiprocessing.Event()
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+MAX_LINES = 500
+def trunc_log(x):
+  if len(lines:=repr(x).splitlines()) > MAX_LINES: lines = lines[:MAX_LINES]+[f"WARN: truncated string with {len(lines)} lines"]
+  logging.info("\n".join(lines))
+
+# user config
+ASSERT_DIFF = int((flag:="[pr]") in os.getenv("COMMIT_MESSAGE", flag) or flag in os.getenv("PR_TITLE", flag))
+if not getenv("ASSERT_PROCESS_REPLAY", 1): ASSERT_DIFF = 0
 SKIP_PROCESS_REPLAY = (k:="[skip_process_replay]") in os.getenv("COMMIT_MESSAGE", "") or k in os.getenv("PR_TITLE", "")
 if REF == "master": SKIP_PROCESS_REPLAY = True
-early_stop = multiprocessing.Event()
-logging.basicConfig(level=logging.INFO, format='%(message)s')
-# *** github settings
-BASE_URL = f"https://api.github.com/repos/{os.getenv('GITHUB_REPOSITORY', 'tinygrad/tinygrad')}"
-GH_HEADERS = {"Authorization": f"Bearer {os.getenv('GH_TOKEN', '')}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+class ProcessReplayWarning(Warning): pass
 
-def diff_kernel(offset:int) -> bool:
-  if early_stop.is_set(): return True
+# *** replay the function and convert return values to string
+
+def replay_kernelize(ret:dict[UOp, UOp], big_sink:UOp) -> tuple[str, str, tuple[Any, ...]]:
+  UOp.unique_num = itertools.count(max([u.arg for u in big_sink.toposort() if u.op is Ops.UNIQUE], default=0)+1)
+  new_sink = big_sink.substitute(get_kernelize_map(big_sink))
+  def to_str(ret:UOp) -> str:
+    asts = [repr(u.arg.ast) for u in ret.toposort() if u.op is Ops.KERNEL]
+    return "\n".join([f"{len(asts)} kernels", *asts])
+  return to_str(new_sink), to_str(ret[big_sink]), (big_sink,)
+
+def replay_linearize(k:Kernel, _:Kernel, name_override=None, ast_transform=None) -> tuple[str, str, tuple[Any, ...]]:
+  # create a copy because the Kernel class contains optimization parameters (other than applied_opts) in its state
+  # this should be made fully functional. It's fine for process replay since copy returns a fresh instance
+  k2 = k.copy()
+  k2.linearize(name_override=name_override or to_function_name(k.name), ast_transform=ast_transform)
+  def to_str(ret:Kernel) -> str:
+    try: return ret.opts.render(ret.uops)
+    except NotImplementedError: return "" # NULL backend doesn't have a renderer, this is okay
+  return to_str(k2), to_str(k), (k.ast, k.opts, k.applied_opts)
+
+replayers: dict[str, Callable[..., tuple[str, str, tuple[Any, ...]]]] = {"get_kernelize_map":replay_kernelize, "linearize":replay_linearize}
+
+# *** run replayers on captured rows and print diffs
+
+def diff(offset:int) -> None:
+  if ASSERT_DIFF: warnings.filterwarnings("error", category=ProcessReplayWarning)
+  if early_stop.is_set(): return None
   conn = db_connection()
   cur = conn.cursor()
   cur.execute(f"SELECT val FROM '{TABLE_NAME}' LIMIT ? OFFSET ?", (PAGE_SIZE, offset))
   changed = 0
   for row in cur.fetchall():
-    ast, applied_opts = None, None
-    # try unpickle and linearize
+    if changed > MAX_DIFF_PCT:
+      warnings.warn(f"detected changes in over {MAX_DIFF_PCT}%. skipping further diff generation.", ProcessReplayWarning)
+      early_stop.set()
+      break
     try:
-      ast, opts, applied_opts, name, compare_src, ctx = pickle.loads(row[0])
-      with Context(**{k:v for k,v in ctx.items() if k in ContextVar._cache and k != "DEBUG"}):
-        k = Kernel(ast, opts=opts)
-        for opt in applied_opts: k.apply_opt(opt)
-        # NOTE: replay with the captured renderer, not the one in master
-        good_src = k.opts.render(name, cast(List,k.to_program().uops))
+      name, args, kwargs, ctx_vals, loc, ret = pickle.loads(row[0])
+      ctx_vars = {k:v.value for k,v in ctx_vals.items() if k != "DEBUG" and (var:=ContextVar._cache.get(k)) is not None and var.value != v.value}
+      if (replayer:=replayers.get(name)) is None: continue
+      with Context(**ctx_vars): good, compare, metadata = replayer(ret, *args, **kwargs)
+      if good != compare:
+        for m in metadata: trunc_log(m)
+        logging.info(loc)
+        for line in difflib.unified_diff(good.splitlines(), compare.splitlines()):
+          logging.info(colored(line, "red" if line.startswith("-") else "green" if line.startswith("+") else None))
+        if ctx_vars: logging.info(ctx_vars)
+        warnings.warn("PROCESS REPLAY DETECTED CHANGE", ProcessReplayWarning)
     except Exception as e:
-      logging.warning("FAILED TO RECREATE KERNEL")
-      logging.info(ast)
-      logging.info(applied_opts)
-      logging.info(e)
-      if ASSERT_DIFF: return True
-      continue
-    try: assert compare_src == good_src
-    except AssertionError:
       changed += 1
-      logging.info("PROCESS REPLAY DETECTED CHANGE")
-      logging.info(ast)
-      logging.info(applied_opts)
-      diff = list(difflib.unified_diff(good_src.splitlines(), compare_src.splitlines()))
-      for line in diff:
-        logging.info(colored(line, "red" if line.startswith("-") else "green" if line.startswith("+") else None))
-      if ASSERT_DIFF: return True
-      if changed > MAX_DIFF_PCT:
-        logging.warning(f"detected changes in over {MAX_DIFF_PCT}% of kernels. skipping further diff generation.")
-        early_stop.set()
-        break
+      warnings.warn(e, ProcessReplayWarning)
   conn.commit()
   cur.close()
-  return bool(changed)
 
-def print_ast_diff(offset:int):
-  conn = db_connection()
-  cur = conn.cursor()
-  cur.execute(f"SELECT val FROM 'schedule_diff_{VERSION}' LIMIT ? OFFSET ?", (PAGE_SIZE, offset))
-  for row in cur.fetchall():
-    buf, asts = pickle.loads(row[0])
-    if len(asts) == 1:
-      logging.info(f"{buf} was folded")
-      logging.info(asts[0])
-    else: print_diff(asts[0], asts[1])
-
-def get_step_times(data) -> Dict[str, float]:
-  tms: Dict[str, float] = {}
-  for step in data["steps"][4:]:
-    # last task
-    if step["name"] == "Run actions/upload-artifact@v4": break
-    fmt = "%Y-%m-%dT%H:%M:%SZ"
-    tm = datetime.strptime(step["completed_at"], fmt) - datetime.strptime(step["started_at"], fmt)
-    tms[step["name"]] = tm.total_seconds()
-  return tms
-
-def process_replay():
-  # *** speed diff (for benchmarks)
-  # TODO: fix this for testqualcommbenchmark
-  if REF == "update_benchmark" and os.environ["GITHUB_JOB"] != "testqualcommbenchmark":
-    name = {"testmacbenchmark": "Mac", "testnvidiabenchmark": "tinybox green", "testmorenvidiabenchmark": "tinybox green Training",
-            "testamdbenchmark": "tinybox red", "testmoreamdbenchmark": "tinybox red Training",
-            "testqualcommbenchmark": "comma"}[os.environ["GITHUB_JOB"]]
-    compare_jobs = requests.get(f"{BASE_URL}/actions/runs/{RUN_ID}/jobs", headers=GH_HEADERS).json()["jobs"]
-    compare_job = next(j for j in compare_jobs if j["name"] == f"{name} Benchmark")
-    ref_runs = requests.get(f"{BASE_URL}/actions/workflows/benchmark.yml/runs?per_page=1&branch=master&status=success", headers=GH_HEADERS).json()
-    ref_jobs = requests.get(f"{BASE_URL}/actions/runs/{ref_runs['workflow_runs'][0]['id']}/jobs").json()["jobs"]
-    ref_job = next(j for j in ref_jobs if j["name"] == f"{name} Benchmark")
-    logging.info(f"comparing speed for {compare_job['id']} against {ref_job['id']}")
-    compare_tms = get_step_times(compare_job)
-    ref_tms = get_step_times(ref_job)
-    diff = [[k, f"{v}s", f"{compare_tms[k]}s", f"{(((v-compare_tms[k])/v)*100):7.2f}%"] for k,v in ref_tms.items() if v>0]
-    logging.info(tabulate(diff, headers=["job", "master", "compare", "diff"]))
-
-  # *** schedule diff
-  if COMPARE_SCHEDULE:
-    conn = db_connection()
-    cur = conn.cursor()
-    try: has_diff = cur.execute(f"select name from sqlite_master where type='table' and name='schedule_diff_{VERSION}'").fetchone()
-    except sqlite3.OperationalError:
-      logging.warning(f"schedule_diff_{VERSION} isn't accessible in master, did DB_VERSION change?")
-      exit(0)
-    if has_diff:
-      row_count = cur.execute(f"select count(*) from 'schedule_diff_{VERSION}'").fetchone()[0]
-      conn.commit()
-      cur.close()
-      with multiprocessing.get_context("spawn").Pool(multiprocessing.cpu_count(), maxtasksperchild=16) as pool:
-        inputs = list(range(0, row_count, PAGE_SIZE))
-        list(tqdm(pool.imap_unordered(print_ast_diff, inputs), total=len(inputs)))
-        pool.close()
-        pool.join()
-        pool.terminate()
-        if ASSERT_DIFF: raise Exception("kernel process replay detected changes")
-
-  # *** kernel diff
-  conn = db_connection()
-  cur = conn.cursor()
-  try: row_count = cur.execute(f"select count(*) from '{TABLE_NAME}'").fetchone()[0]
-  except sqlite3.OperationalError:
-    logging.warning(f"{TABLE_NAME} isn't accessible in master, did DB_VERSION change?")
-    exit(0)
-  conn.commit()
-  cur.close()
-  with multiprocessing.get_context("spawn").Pool(multiprocessing.cpu_count(), maxtasksperchild=16) as pool:
-    inputs = list(range(0, row_count, PAGE_SIZE))
-    changed = list(tqdm(pool.imap_unordered(diff_kernel, inputs), total=len(inputs)))
-    pool.close()
-    pool.join()
-    pool.terminate()
-    if any(changed) and ASSERT_DIFF: raise Exception("kernel process replay detected changes")
+# *** main loop
 
 if __name__ == "__main__":
   if SKIP_PROCESS_REPLAY:
     logging.info("skipping process replay.")
     exit(0)
-  try: process_replay()
-  except Exception as e:
-    # TODO: catch specific Exception
-    if ASSERT_DIFF: raise e
+
+  conn = db_connection()
+  cur = conn.cursor()
+  try: row_count = cur.execute(f"select count(*) from '{TABLE_NAME}'").fetchone()[0]
+  except sqlite3.OperationalError:
+    warnings.warn(f"{TABLE_NAME} isn't accessible in master, did DB_VERSION change?", ProcessReplayWarning)
+    exit(int(ASSERT_DIFF))
+  finally:
+    conn.commit()
+    cur.close()
+
+  logging.info(f"running process replay with {ASSERT_DIFF=}")
+  with multiprocessing.get_context("spawn").Pool(multiprocessing.cpu_count()) as pool:
+    inputs = list(range(0, row_count, PAGE_SIZE))
+    list(tqdm(pool.imap_unordered(diff, inputs), total=len(inputs)))
+    pool.close()
+    pool.join()
+    pool.terminate()

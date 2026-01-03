@@ -159,7 +159,7 @@ function prompt_update {
   gum confirm "Update packages?" && sudo apt update -y && sudo apt upgrade -y
 
   # see if apt upgrade required a reboot
-  if [[ -f /var/run/reboot-required ]]; then
+  if [[ -f /var/run/reboot-required ]] || [[ -f /var/run/reboot-required.pkgs ]]; then
     NEED_REBOOT=1
   fi
 }
@@ -180,6 +180,9 @@ function main {
   if tty | grep -q "ttyS"; then
     export TERM=xterm-256color
   fi
+
+  # remove setup key
+  rm -f /home/tiny/.ssh/authorized_keys
 
   check_cloudinit
 

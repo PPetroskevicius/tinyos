@@ -3,16 +3,15 @@ set -xeo pipefail
 
 source /etc/tinybox-release
 
-pushd /home/tiny
+if [[ -z "$TINYBOX_CORE" ]]; then
+  pushd /home/tiny
 
-# install pytorch
-if [[ "$TINYBOX_COLOR" == "red" ]]; then
-  pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.1
-elif [[ "$TINYBOX_COLOR" == "green" ]]; then
-  pip install torch torchvision torchaudio
-else
-  echo "Unknown tinybox color: $TINYBOX_COLOR"
-  exit 1
+  # install pytorch
+  if [[ "$TINYBOX_COLOR" == "red" ]]; then
+    pip install --user --break-system-packages --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm7.0
+  elif [[ "$TINYBOX_COLOR" == "green" ]]; then
+    pip install --user --break-system-packages torch torchvision --index-url https://download.pytorch.org/whl/cu128
+  fi
+
+  popd
 fi
-
-popd

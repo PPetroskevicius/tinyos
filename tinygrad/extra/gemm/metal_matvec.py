@@ -30,7 +30,7 @@ WORKSIZE_ROW = 16
 WORKSIZE_COL = 1
 LOCAL_SIZE = [32, WORKSIZE_COL, WORKSIZE_ROW]
 GLOBAL_SIZE = [M//(LOCAL_SIZE[0]*LOCAL_SIZE[1]*4), 1, 1]
-prog = MetalProgram(device, "test", MetalCompiler(device).compile(f"""
+prog = MetalProgram(device, "test", MetalCompiler().compile(f"""
 #include <metal_stdlib>
 using namespace metal;
 kernel void test(device float* data0, const device float* data1, const device float* data2, uint3 gid [[threadgroup_position_in_grid]], uint3 lid [[thread_position_in_threadgroup]]) {{
@@ -80,8 +80,8 @@ kernel void test(device float* data0, const device float* data1, const device fl
 a = metalalloc.alloc(M*4)
 b = metalalloc.alloc(N*4)
 c = metalalloc.alloc(N*M*4)
-metalalloc.copyin(b,nb.tobytes())
-metalalloc.copyin(c,nc.tobytes())
+metalalloc._copyin(b,nb.tobytes())
+metalalloc._copyin(c,nc.tobytes())
 def metalrun():
   prog(a, b, c, global_size=GLOBAL_SIZE, local_size=LOCAL_SIZE, wait=True)
   return a
@@ -93,7 +93,7 @@ def timeit(fxn):
 tm = min([timeit(metalrun) for _ in range(200)])
 print(f"{N:d}x{M:d} {tm*1e6:9.2f} us, would be {FLOPS*1e-9/tm:9.2f} GFLOPS matvec in metal")
 metal_a = np.zeros(M, dtype=np.float32)
-metalalloc.copyout(flat_mv(metal_a.data), a)
+metalalloc._copyout(flat_mv(metal_a.data), a)
 np.testing.assert_allclose(metal_a, torch_a, atol=5e-3)
 
 b = Tensor(nb)
